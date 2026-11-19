@@ -1,0 +1,997 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Survey Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: estúdio de planta (ferramentas | prancheta com mapa de calor | inspetor). Neutros azulados, cor de destaque azul, escala de calor semântica (vermelho→verde→azul-petróleo). */
+:root{
+  --bg:#eef1f5; --panel:#ffffff; --ink:#18212d; --mute:#5b6a7c; --line:#dae1e9; --chip:#eef2f7;
+  --accent:#2b62d9; --accent-ink:#ffffff; --accent-soft:#e3ebfc;
+  --canvas:#e6ebf1; --paper:#fbfcfd; --grid:#e9eef3; --grid2:#d3dbe4; --wall:#1f2b3a;
+  --ok:#1b8a5a; --warn:#a96a0c; --bad:#c23b3b;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0c1117; --panel:#141b23; --ink:#e6ebf2; --mute:#93a1b3; --line:#252f3b; --chip:#1b2530;
+  --accent:#6c9bff; --accent-ink:#0b1220; --accent-soft:#1d2b47;
+  --canvas:#0f151c; --paper:#121a23; --grid:#18222c; --grid2:#243241; --wall:#d6deea;
+  --ok:#4cc38a; --warn:#e0a84a; --bad:#ef7b7b; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0c1117; --panel:#141b23; --ink:#e6ebf2; --mute:#93a1b3; --line:#252f3b; --chip:#1b2530;
+  --accent:#6c9bff; --accent-ink:#0b1220; --accent-soft:#1d2b47;
+  --canvas:#0f151c; --paper:#121a23; --grid:#18222c; --grid2:#243241; --wall:#d6deea;
+  --ok:#4cc38a; --warn:#e0a84a; --bad:#ef7b7b; color-scheme:dark;}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:13px/1.45 var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
+.shell{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px;min-width:0}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+.brand{display:flex;align-items:center;gap:9px;margin-right:auto}
+.brand svg{width:26px;height:26px;color:var(--accent);flex:none}
+.brand b{display:block;font-size:15px;font-weight:600;letter-spacing:-.01em}
+.brand span{display:block;color:var(--mute);font-size:11.5px}
+.top input#projName{width:min(260px,100%);font-weight:500}
+
+.app{display:grid;grid-template-columns:52px minmax(0,1fr) 320px;gap:10px;min-height:0}
+.tools{display:flex;flex-direction:column;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;align-self:start}
+.tool{width:38px;height:38px;border:1px solid transparent;border-radius:7px;background:none;cursor:pointer;display:grid;place-items:center;color:var(--mute);position:relative}
+.tool:hover{background:var(--chip);color:var(--ink)}
+.tool[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.tool svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tool kbd{position:absolute;right:2px;bottom:0;font:500 8.5px var(--mono);opacity:.6}
+
+.stage{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px;min-width:0;min-height:0}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+.bar label{display:flex;align-items:center;gap:6px;color:var(--mute);font-size:12px}
+.bar .sep{width:1px;height:20px;background:var(--line)}
+.cwrap{position:relative;min-height:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--canvas)}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+.hint{position:absolute;left:10px;top:10px;max-width:min(420px,70%);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;color:var(--mute);pointer-events:none}
+.legend{position:absolute;left:10px;bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px 6px;width:230px;pointer-events:none}
+.legend .t{font-size:11px;color:var(--mute);margin-bottom:5px;display:flex;justify-content:space-between}
+.legend .grad{height:9px;border-radius:3px}
+.legend .ticks{display:flex;justify-content:space-between;font:10.5px var(--mono);color:var(--mute);margin-top:3px}
+.legend .chips{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--mute)}
+.legend .chips i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:4px}
+.zoom button{width:30px;height:30px}
+.calib{position:absolute;left:10px;top:66px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--accent);border-radius:9px;padding:8px 10px;max-width:calc(100% - 20px)}
+.calib input[type=number]{width:84px}
+.cwrap.drop{outline:2px dashed var(--accent);outline-offset:-6px}
+.tools .gap{height:1px;background:var(--line);margin:2px 4px}
+.status{font:12px var(--mono);color:var(--mute);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-height:32px;display:flex;gap:6px 16px;flex-wrap:wrap}
+.status b{color:var(--ink);font-weight:500}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0;min-width:0}
+.tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
+.tabs button{flex:1;padding:9px 8px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;color:var(--mute);font-weight:500}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+#pane{padding:12px;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:12px}
+h3{margin:0;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.grp{display:flex;flex-direction:column;gap:8px}
+.row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;align-items:center}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row>span,.lbl{color:var(--mute);font-size:12px}
+input[type=text],input[type=number],select,textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px;min-width:0}
+input[type=number]{font-family:var(--mono);font-size:12.5px}
+textarea{font:11.5px/1.4 var(--mono);resize:vertical;min-height:84px}
+input[type=range]{accent-color:var(--accent);width:90px}
+input[type=checkbox]{accent-color:var(--accent)}
+.bar input[type=number]{width:62px}
+.bar select{width:auto}
+.btn{background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--mute)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.btn.dng{color:var(--bad)}
+.btn.sq{padding:0;width:30px;height:30px;display:grid;place-items:center;font-size:16px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:12.5px}
+.kv span:nth-child(odd){color:var(--mute)}
+.kv span:nth-child(even){font-family:var(--mono);text-align:right}
+.cov{display:flex;align-items:baseline;gap:8px}
+.cov b{font:500 30px/1 var(--mono);letter-spacing:-.02em}
+.bar-cov{height:6px;border-radius:3px;background:var(--chip);overflow:hidden}
+.bar-cov i{display:block;height:100%;background:var(--ok)}
+.warn{display:flex;gap:7px;font-size:12.5px;padding:6px 8px;border-radius:6px;background:var(--chip);border-left:3px solid var(--warn)}
+.warn.bad{border-left-color:var(--bad)} .warn.ok{border-left-color:var(--ok)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{padding:5px 8px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{font-weight:500;color:var(--mute);font-size:11px;background:var(--chip)}
+tr:last-child td{border-bottom:0}
+td.m{font-family:var(--mono)}
+.link{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;text-decoration:underline}
+.pill{font:500 10.5px var(--mono);padding:1px 6px;border-radius:9px;background:var(--chip)}
+.small{font-size:11.5px;color:var(--mute)}
+details summary{cursor:pointer;color:var(--mute);font-size:12px}
+
+@media (max-width:900px){
+  html,body{height:auto}
+  .shell{height:auto}
+  .app{grid-template-columns:1fr}
+  .tools{flex-direction:row;overflow-x:auto;align-self:stretch}
+  .tool{flex:none}
+  .cwrap{height:62vh;min-height:360px}
+  .panel{max-height:none}
+  #pane{overflow:visible}
+  .legend{width:190px}
+}
+@media (prefers-reduced-motion:no-preference){.tool{transition:background .12s}}
+</style>
+
+<div class="shell">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a17 17 0 0124 0M9 17a10 10 0 0114 0M13.5 21.5a3.5 3.5 0 015 0"/><circle cx="16" cy="26" r="1.4" fill="currentColor"/></svg>
+      <div><b>Survey Planner</b><span>Projeto de redes LAN / WLAN · potência teórica em dBm</span></div>
+    </div>
+    <input type="text" id="projName" data-b="meta.name" aria-label="Nome do projeto">
+    <div class="btns">
+      <button class="btn sq" data-act="undo" title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
+      <button class="btn sq" data-act="redo" title="Refazer (Ctrl+Y)" aria-label="Refazer">↷</button>
+    </div>
+  </header>
+
+  <div class="app">
+    <nav class="tools" id="tools" aria-label="Ferramentas"></nav>
+
+    <section class="stage">
+      <div class="bar" id="bar">
+        <label>Banda
+          <select id="bBand" data-b="set.band"><option value="all">Todas</option><option value="2.4">2,4 GHz</option><option value="5">5 GHz</option><option value="6">6 GHz</option></select>
+        </label>
+        <label>Mapa
+          <select id="bMode" data-b="set.mode"><option value="signal">Sinal (dBm)</option><option value="snr">SNR / SINR (dB)</option><option value="redund">Redundância de APs</option></select>
+        </label>
+        <label>Limiar <input type="number" id="bThr" data-b="set.thr" data-t="n" min="-100" max="-30" step="1"> dBm</label>
+        <label>Opacidade <input type="range" id="bOp" data-b="set.op" data-t="n" min="0.15" max="0.95" step="0.05"></label>
+        <label><input type="checkbox" id="bHeat" data-b="set.heat"> Mapa de calor</label>
+        <span class="sep"></span>
+        <span id="opt" style="display:flex;gap:10px;align-items:center"></span>
+      </div>
+
+      <div class="cwrap" id="cwrap">
+        <canvas id="cv" aria-label="Planta baixa com mapa de calor de sinal"></canvas>
+        <div class="hint" id="hint"></div>
+        <div class="calib" id="calib" hidden><span>Distância medida <b id="cMeas">0</b> m. Distância real:</span><input type="number" id="cDist" min="0.1" step="0.01" aria-label="Distância real em metros"><span>m</span><button class="btn pri" data-act="calibok">Aplicar escala</button><button class="btn" data-act="calibcancel">Cancelar</button></div>
+        <input type="file" id="planIn" accept="image/*" hidden aria-label="Importar planta baixa">
+        <div class="legend" id="legend"></div>
+        <div class="zoom">
+          <button class="btn sq" data-act="zin" aria-label="Aproximar">+</button>
+          <button class="btn sq" data-act="zout" aria-label="Afastar">−</button>
+          <button class="btn sq" data-act="fit" aria-label="Ajustar à tela" title="Ajustar à tela">⤢</button>
+        </div>
+      </div>
+      <div class="status" id="status"></div>
+    </section>
+
+    <aside class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabProps" data-act="tab" data-v="props" aria-selected="true">Propriedades</button>
+        <button role="tab" id="tabRep" data-act="tab" data-v="rep" aria-selected="false">Relatório</button>
+      </div>
+      <div id="pane"></div>
+    </aside>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- constantes físicas e catálogo ---------- */
+const MATS={
+  drywall:{n:"Drywall",db:3,c:"#8e9bab",w:3},
+  wood:{n:"Madeira / porta",db:4,c:"#b98a56",w:3},
+  glass:{n:"Vidro",db:4,c:"#3fa0c4",w:2.5},
+  brick:{n:"Tijolo",db:8,c:"#c0674c",w:4},
+  concrete:{n:"Concreto",db:12,c:"#7a828c",w:5},
+  rebar:{n:"Concreto armado",db:18,c:"#4f5662",w:5.5},
+  metal:{n:"Metal / elevador",db:25,c:"#8a5bd6",w:5}
+};
+const BANDS={
+  "2.4":{f:2437,k:1.0,n:"2,4 GHz",def:{tx:17,gain:3,ch:6}},
+  "5":{f:5500,k:1.35,n:"5 GHz",def:{tx:20,gain:4,ch:36}},
+  "6":{f:6175,k:1.5,n:"6 GHz",def:{tx:18,gain:4,ch:5}}
+};
+const CH={
+  "2.4":[1,2,3,4,5,6,7,8,9,10,11,12,13],
+  "5":[36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,149,153,157,161,165],
+  "6":[1,5,9,13,17,21,25,29,33,37,41,45,49,53,57,61,65,69,73,77,81,85,89,93]
+};
+const CABLES={cat5e:{n:"Cat5e",lim:90},cat6:{n:"Cat6",lim:90},cat6a:{n:"Cat6A",lim:90},fibra:{n:"Fibra óptica",lim:300}};
+const STOPS=[[0,[127,29,58]],[.2,[217,72,59]],[.4,[240,138,60]],[.55,[242,201,76]],[.7,[155,208,90]],[.85,[47,179,110]],[1,[27,143,158]]];
+const GRAD="linear-gradient(90deg,"+STOPS.map(s=>`rgb(${s[1]}) ${s[0]*100}%`).join(",")+")";
+const RED_COL=[[127,29,58],[240,138,60],[155,208,90],[27,143,158]];
+const SIG_MIN=-90,SIG_MAX=-35,SNR_MAX=45;
+const KEY="survey-planner.v1";
+
+/* ---------- estado ---------- */
+const uid=()=>Math.random().toString(36).slice(2,8);
+let S=null, hist=[], hi=-1, sel=null, tool="select", tab="props";
+const T={mat:"drywall",band:"5",cat:"cat6"};
+const view={s:16,ox:30,oy:30};
+let bgImg=null;
+
+function sample(){
+  const w=(x1,y1,x2,y2,mat)=>({id:uid(),x1,y1,x2,y2,mat});
+  const walls=[
+    w(0,0,36,0,"brick"),w(36,0,36,20,"brick"),w(36,20,0,20,"brick"),w(0,20,0,0,"brick"),
+    w(0,8,7,8,"drywall"),w(11,8,16,8,"drywall"),w(20,8,25,8,"drywall"),w(29,8,36,8,"drywall"),
+    w(9,0,9,8,"drywall"),w(18,0,18,8,"drywall"),w(27,0,27,8,"drywall"),
+    w(0,12,12,12,"glass"),w(15,12,22,12,"drywall"),w(26,12,36,12,"drywall"),
+    w(12,12,12,20,"drywall"),w(24,12,24,20,"concrete"),
+    w(21,9,24,9,"rebar"),w(24,9,24,11,"rebar"),w(24,11,21,11,"rebar"),w(21,11,21,9,"rebar")
+  ];
+  const ap=(name,x,y,ch)=>({id:uid(),type:"ap",name,x,y,band:"5",tx:20,gain:4,ch,draw:15});
+  const sw={id:uid(),type:"switch",name:"SW-01",x:13.5,y:4,ports:24,poe:370};
+  const rt={id:uid(),type:"router",name:"FW-01",x:13.5,y:1.5};
+  const aps=[ap("AP-01",5,10,36),ap("AP-02",15,10,149),ap("AP-03",31,10,44),ap("AP-04",6,16,149),ap("AP-05",32,16,36)];
+  const cables=[{id:uid(),a:rt.id,b:sw.id,cat:"fibra"}].concat(aps.map(a=>({id:uid(),a:sw.id,b:a.id,cat:"cat6"})));
+  return {v:1,meta:{name:"Escritório — Pavimento 1 (exemplo)",W:36,H:20},
+    set:{n:3.0,noise:-95,thr:-67,band:"all",mode:"signal",op:0.7,heat:true,snap:true,drop:3},
+    walls,dev:[rt,sw].concat(aps),cables,probes:[],bg:null};
+}
+function snap(){return JSON.stringify(S,(k,v)=>k==="bg"?undefined:v)}
+function restore(j){const n=JSON.parse(j);n.bg=S.bg;S=n;if(sel&&!getSel())sel=null}
+function commit(){
+  const j=snap();
+  if(hist[hi]===j)return;
+  hist=hist.slice(0,hi+1);hist.push(j);if(hist.length>80)hist.shift();hi=hist.length-1;
+  persist();
+}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function load(){try{const r=localStorage.getItem(KEY);if(r){const o=JSON.parse(r);if(o&&o.walls&&o.dev)return o}}catch(e){}return null}
+function setBg(bg){
+  if(typeof bg==="string")bg={data:bg,x:0,y:0,w:S.meta.W,op:.55};
+  S.bg=bg||null;bgImg=null;
+  if(bg&&bg.data){const i=new Image();i.onload=()=>{bgImg=i;invalidate()};i.src=bg.data}
+}
+
+/* ---------- geometria e propagação ---------- */
+const dev=id=>S.dev.find(d=>d.id===id);
+const aps=()=>S.dev.filter(d=>d.type==="ap"&&(S.set.band==="all"||d.band===S.set.band));
+function segInt(ax,ay,bx,by,cx,cy,dx,dy){
+  const r1x=bx-ax,r1y=by-ay,r2x=dx-cx,r2y=dy-cy,den=r1x*r2y-r1y*r2x;
+  if(Math.abs(den)<1e-9)return false;
+  const t=((cx-ax)*r2y-(cy-ay)*r2x)/den,u=((cx-ax)*r1y-(cy-ay)*r1x)/den;
+  return t>=0&&t<=1&&u>=0&&u<=1;
+}
+function wallLoss(ax,ay,bx,by,k){
+  let L=0;
+  for(const w of S.walls){if(segInt(ax,ay,bx,by,w.x1,w.y1,w.x2,w.y2))L+=MATS[w.mat].db*k}
+  return L;
+}
+function wallsCrossed(ax,ay,bx,by){
+  const r=[];for(const w of S.walls){if(segInt(ax,ay,bx,by,w.x1,w.y1,w.x2,w.y2))r.push(w)}return r;
+}
+const fspl1=f=>20*Math.log10(f)-27.55;               // perda em espaço livre a 1 m
+function rx(ap,x,y){
+  const B=BANDS[ap.band],d=Math.max(1,Math.hypot(x-ap.x,y-ap.y));
+  return ap.tx+ap.gain-fspl1(B.f)-10*S.set.n*Math.log10(d)-wallLoss(ap.x,ap.y,x,y,B.k);
+}
+function bestAt(x,y){
+  let best=null;
+  for(const a of aps()){const p=rx(a,x,y);if(!best||p>best.p)best={p,ap:a}}
+  if(best)best.walls=wallsCrossed(best.ap.x,best.ap.y,x,y);
+  return best;
+}
+const overlap=(band,c1,c2)=>band==="2.4"?Math.abs(c1-c2)<5:c1===c2;
+const mw=d=>Math.pow(10,d/10);
+const quality=p=>p>=-55?["Excelente","var(--ok)"]:p>=-67?["Boa","var(--ok)"]:p>=-75?["Regular","var(--warn)"]:p>=-85?["Fraca","var(--bad)"]:["Sem sinal","var(--bad)"];
+
+/* ---------- mapa de calor ---------- */
+const hc=document.createElement("canvas");
+let HEAT=null;
+function computeHeat(){
+  const {W,H}=S.meta,list=aps();
+  const cell=Math.max(0.25,Math.sqrt(W*H/42000));
+  const cols=Math.max(1,Math.ceil(W/cell)),rows=Math.max(1,Math.ceil(H/cell)),N=cols*rows;
+  const bestP=new Float32Array(N).fill(-200),bestI=new Int16Array(N).fill(-1),cnt=new Uint8Array(N),sinr=new Float32Array(N);
+  const tmp=new Float32Array(list.length),noise=mw(S.set.noise),thr=S.set.thr,nexp=10*S.set.n;
+  const pre=list.map(a=>({a,base:a.tx+a.gain-fspl1(BANDS[a.band].f),k:BANDS[a.band].k}));
+  let covered=0,sum=0;
+  for(let j=0;j<rows;j++){
+    const y=(j+.5)*cell;
+    for(let i=0;i<cols;i++){
+      const x=(i+.5)*cell,idx=j*cols+i;
+      let bp=-200,bi=-1,c=0;
+      for(let q=0;q<pre.length;q++){
+        const o=pre[q],a=o.a,d=Math.max(1,Math.hypot(x-a.x,y-a.y));
+        const p=o.base-nexp*Math.log10(d)-wallLoss(a.x,a.y,x,y,o.k);
+        tmp[q]=p;if(p>=thr)c++;if(p>bp){bp=p;bi=q}
+      }
+      bestP[idx]=bp;bestI[idx]=bi;cnt[idx]=c;
+      if(bi>=0){
+        let I=0;const b=list[bi];
+        for(let q=0;q<pre.length;q++){if(q!==bi&&list[q].band===b.band&&overlap(b.band,list[q].ch,b.ch))I+=mw(tmp[q])}
+        sinr[idx]=bp-10*Math.log10(noise+I);
+        if(bp>=thr)covered++;sum+=bp;
+      }
+    }
+  }
+  HEAT={cols,rows,cell,bestP,bestI,cnt,sinr,N,cov:list.length?covered/N:0,avg:list.length?sum/N:null,list};
+  paintHeat();
+}
+function ramp(t){
+  t=Math.max(0,Math.min(1,t));
+  for(let i=1;i<STOPS.length;i++){
+    if(t<=STOPS[i][0]){
+      const a=STOPS[i-1],b=STOPS[i],u=(t-a[0])/(b[0]-a[0]);
+      return [a[1][0]+(b[1][0]-a[1][0])*u,a[1][1]+(b[1][1]-a[1][1])*u,a[1][2]+(b[1][2]-a[1][2])*u];
+    }
+  }
+  return STOPS[STOPS.length-1][1];
+}
+function paintHeat(){
+  if(!HEAT)return;
+  const {cols,rows,bestP,sinr,cnt,N}=HEAT;
+  hc.width=cols;hc.height=rows;
+  const cx=hc.getContext("2d"),img=cx.createImageData(cols,rows),d=img.data,m=S.set.mode;
+  for(let i=0;i<N;i++){
+    const p=bestP[i];let rgb,a=255;
+    if(p<-110){a=0;rgb=[0,0,0]}
+    else if(m==="signal")rgb=ramp((p-SIG_MIN)/(SIG_MAX-SIG_MIN));
+    else if(m==="snr")rgb=ramp(sinr[i]/SNR_MAX);
+    else{rgb=RED_COL[Math.min(3,cnt[i])]}
+    d[i*4]=rgb[0];d[i*4+1]=rgb[1];d[i*4+2]=rgb[2];d[i*4+3]=a;
+  }
+  cx.putImageData(img,0,0);
+}
+function renderLegend(){
+  const m=S.set.mode,el=$("#legend");
+  if(m==="redund"){
+    el.innerHTML=`<div class="t"><span>APs com sinal ≥ ${S.set.thr} dBm</span></div><div class="chips">${["0","1","2","3+"].map((l,i)=>`<span><i style="background:rgb(${RED_COL[i]})"></i>${l}</span>`).join("")}</div>`;
+    return;
+  }
+  const ticks=m==="signal"?[-90,-80,-70,-60,-50,-40]:[0,10,20,30,40];
+  el.innerHTML=`<div class="t"><span>${m==="signal"?"Potência recebida (dBm)":"SNR / SINR (dB)"}</span></div>
+    <div class="grad" style="background:${GRAD}"></div><div class="ticks">${ticks.map(t=>`<span>${t}</span>`).join("")}</div>`;
+}
+
+/* ---------- LAN ---------- */
+function cableLen(c){
+  const a=dev(c.a),b=dev(c.b);if(!a||!b)return 0;
+  return (Math.abs(a.x-b.x)+Math.abs(a.y-b.y))*1.15+2*S.set.drop;
+}
+function cableState(c){
+  const L=cableLen(c),lim=CABLES[c.cat].lim;
+  return L>lim?"bad":L>lim*0.85?"warn":"ok";
+}
+function lanReport(){
+  const warns=[];
+  const sws=S.dev.filter(d=>d.type==="switch");
+  const apsAll=S.dev.filter(d=>d.type==="ap");
+  const upl={};
+  for(const c of S.cables){
+    const a=dev(c.a),b=dev(c.b);if(!a||!b)continue;
+    for(const [x,y] of [[a,b],[b,a]]){if(x.type==="ap"&&(y.type==="switch"||y.type==="router"))upl[x.id]={to:y,c}}
+  }
+  const swRows=sws.map(s=>{
+    const cs=S.cables.filter(c=>c.a===s.id||c.b===s.id);
+    const poeUsed=cs.reduce((t,c)=>{const o=dev(c.a===s.id?c.b:c.a);return t+(o&&o.type==="ap"?o.draw:0)},0);
+    if(cs.length>s.ports)warns.push(["bad",`${s.name}: ${cs.length} cabos para ${s.ports} portas.`]);
+    if(poeUsed>s.poe)warns.push(["bad",`${s.name}: consumo PoE de ${poeUsed} W excede o orçamento de ${s.poe} W.`]);
+    return {s,used:cs.length,poeUsed};
+  });
+  for(const a of apsAll)if(!upl[a.id])warns.push(["warn",`${a.name} não tem cabo até um switch ou roteador.`]);
+  for(const c of S.cables){
+    const st=cableState(c),L=cableLen(c),lim=CABLES[c.cat].lim,a=dev(c.a),b=dev(c.b);
+    if(!a||!b)continue;
+    if(st==="bad")warns.push(["bad",`Cabo ${a.name} ↔ ${b.name}: ${L.toFixed(0)} m passa do limite de ${lim} m para ${CABLES[c.cat].n}.`]);
+    else if(st==="warn")warns.push(["warn",`Cabo ${a.name} ↔ ${b.name}: ${L.toFixed(0)} m está perto do limite de ${lim} m.`]);
+  }
+  const total=S.cables.reduce((t,c)=>t+cableLen(c),0);
+  return {warns,swRows,upl,total,apsAll};
+}
+
+/* ---------- utilidades ---------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const w2s=(x,y)=>[x*view.s+view.ox,y*view.s+view.oy];
+const s2w=(px,py)=>[(px-view.ox)/view.s,(py-view.oy)/view.s];
+const snapV=v=>S.set.snap?Math.round(v*2)/2:v;
+function dSeg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,l=dx*dx+dy*dy;
+  let t=l?((px-x1)*dx+(py-y1)*dy)/l:0;t=clamp(t,0,1);
+  return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
+}
+function getSel(){
+  if(!sel)return null;
+  const arr=sel.kind==="dev"?S.dev:sel.kind==="wall"?S.walls:S.cables;
+  return arr.find(o=>o.id===sel.id)||null;
+}
+function nextName(prefix,type){
+  const n=S.dev.filter(d=>d.type===type).length+1;
+  let name;let k=n;do{name=prefix+"-"+String(k++).padStart(2,"0")}while(S.dev.some(d=>d.name===name));
+  return name;
+}
+function polyCable(c){
+  const a=dev(c.a),b=dev(c.b);if(!a||!b)return null;
+  return [[a.x,a.y],[b.x,a.y],[b.x,b.y]];
+}
+
+/* ---------- desenho ---------- */
+const cv=$("#cv"),ctx=cv.getContext("2d");
+let DPR=1,raf=0,heatDirty=true,mouse=null,chain=null,pending=null,drag=null,lastLegend="",calib=null;
+function css(){
+  const g=getComputedStyle(document.documentElement),v=n=>g.getPropertyValue(n).trim();
+  return {canvas:v("--canvas"),paper:v("--paper"),grid:v("--grid"),grid2:v("--grid2"),ink:v("--ink"),mute:v("--mute"),accent:v("--accent"),
+    panel:v("--panel"),ok:v("--ok"),warn:v("--warn"),bad:v("--bad"),wall:v("--wall"),aci:v("--accent-ink")};
+}
+function invalidate(){
+  heatDirty=true;
+  if(!raf)raf=requestAnimationFrame(()=>{raf=0;frame()});
+}
+function redraw(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;frame()})}
+function frame(){
+  if(heatDirty){computeHeat();heatDirty=false}
+  const key=S.set.mode+"|"+S.set.thr;
+  if(key!==lastLegend){renderLegend();lastLegend=key}
+  draw();
+}
+function resize(){
+  const r=cv.parentElement.getBoundingClientRect();
+  DPR=window.devicePixelRatio||1;
+  cv.width=Math.max(1,Math.round(r.width*DPR));cv.height=Math.max(1,Math.round(r.height*DPR));
+  redraw();
+}
+function fit(){
+  const r=cv.parentElement.getBoundingClientRect(),{W,H}=S.meta,m=36;
+  view.s=Math.max(2,Math.min((r.width-m*2)/W,(r.height-m*2)/H));
+  view.ox=(r.width-W*view.s)/2;view.oy=(r.height-H*view.s)/2;redraw();
+}
+function pill(x,y,text,C,color){
+  ctx.font='500 11px "IBM Plex Mono",monospace';
+  const w=ctx.measureText(text).width+10;
+  ctx.fillStyle=C.panel;ctx.strokeStyle=color||C.grid2;ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(x-w/2,y-9,w,18,5);ctx.fill();ctx.stroke();
+  ctx.fillStyle=color||C.ink;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(text,x,y+.5);
+}
+function draw(){
+  const C=css(),w=cv.width/DPR,h=cv.height/DPR,{W,H}=S.meta;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle=C.canvas;ctx.fillRect(0,0,w,h);
+  const [x0,y0]=w2s(0,0),pw=W*view.s,ph=H*view.s;
+  ctx.fillStyle=C.paper;ctx.fillRect(x0,y0,pw,ph);
+  ctx.save();ctx.beginPath();ctx.rect(x0,y0,pw,ph);ctx.clip();
+  if(bgImg&&S.bg){const b=S.bg,[bx,by]=w2s(b.x,b.y),bw=b.w*view.s;ctx.globalAlpha=b.op;ctx.drawImage(bgImg,bx,by,bw,bw*bgImg.height/bgImg.width);ctx.globalAlpha=1}
+  // grade
+  const step=view.s>=12?1:5;
+  ctx.lineWidth=1;
+  for(let x=0;x<=W;x+=step){const sx=Math.round(x0+x*view.s)+.5;ctx.strokeStyle=x%5===0?C.grid2:C.grid;ctx.beginPath();ctx.moveTo(sx,y0);ctx.lineTo(sx,y0+ph);ctx.stroke()}
+  for(let y=0;y<=H;y+=step){const sy=Math.round(y0+y*view.s)+.5;ctx.strokeStyle=y%5===0?C.grid2:C.grid;ctx.beginPath();ctx.moveTo(x0,sy);ctx.lineTo(x0+pw,sy);ctx.stroke()}
+  // calor
+  if(S.set.heat&&HEAT&&HEAT.list.length){
+    ctx.globalAlpha=S.set.op;ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(hc,x0,y0,HEAT.cols*HEAT.cell*view.s,HEAT.rows*HEAT.cell*view.s);
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+  ctx.strokeStyle=C.mute;ctx.lineWidth=1;ctx.strokeRect(x0+.5,y0+.5,pw,ph);
+  // paredes
+  ctx.lineCap="round";
+  for(const wl of S.walls){
+    const m=MATS[wl.mat],[ax,ay]=w2s(wl.x1,wl.y1),[bx,by]=w2s(wl.x2,wl.y2);
+    const isSel=sel&&sel.kind==="wall"&&sel.id===wl.id;
+    if(isSel){ctx.strokeStyle=C.accent;ctx.globalAlpha=.35;ctx.lineWidth=m.w+9;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();ctx.globalAlpha=1}
+    ctx.strokeStyle=C.paper;ctx.lineWidth=m.w+2;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    ctx.strokeStyle=m.c;ctx.lineWidth=m.w;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    if(isSel){for(const [px,py] of [[ax,ay],[bx,by]]){ctx.fillStyle=C.panel;ctx.strokeStyle=C.accent;ctx.lineWidth=2;ctx.beginPath();ctx.arc(px,py,5,0,7);ctx.fill();ctx.stroke()}}
+  }
+  // cabos
+  for(const c of S.cables){
+    const pl=polyCable(c);if(!pl)continue;
+    const st=cableState(c),col=st==="bad"?C.bad:st==="warn"?C.warn:C.mute,isSel=sel&&sel.kind==="cable"&&sel.id===c.id;
+    ctx.setLineDash(c.cat==="fibra"?[2,4]:[6,4]);
+    ctx.strokeStyle=col;ctx.lineWidth=isSel?3:1.6;
+    ctx.beginPath();pl.forEach((p,i)=>{const [sx,sy]=w2s(p[0],p[1]);i?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy)});ctx.stroke();
+    ctx.setLineDash([]);
+    if(view.s>=9||isSel||st!=="ok"){const mx=(pl[0][0]+pl[2][0])/2,my=(pl[0][1]+pl[2][1])/2,[sx,sy]=w2s(mx,my);pill(sx,sy,cableLen(c).toFixed(0)+" m",C,st==="ok"?null:col)}
+  }
+  // dispositivos
+  for(const d of S.dev)drawDev(d,C);
+  // sondas
+  S.probes.forEach((p,i)=>{
+    const [sx,sy]=w2s(p.x,p.y),b=bestAt(p.x,p.y);
+    ctx.strokeStyle=C.ink;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(sx,sy,5,0,7);ctx.moveTo(sx-9,sy);ctx.lineTo(sx+9,sy);ctx.moveTo(sx,sy-9);ctx.lineTo(sx,sy+9);ctx.stroke();
+    if(b)pill(sx,sy-20,Math.round(b.p)+" dBm",C);
+  });
+  // pré-visualizações
+  if(mouse){
+    const [mx,my]=w2s(mouse.x,mouse.y);
+    if(tool==="wall"&&chain){
+      const [ax,ay]=w2s(chain.x,chain.y);
+      ctx.strokeStyle=MATS[T.mat].c;ctx.lineWidth=MATS[T.mat].w;ctx.globalAlpha=.8;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(mx,my);ctx.stroke();ctx.globalAlpha=1;
+      pill((ax+mx)/2,(ay+my)/2-14,Math.hypot(mouse.x-chain.x,mouse.y-chain.y).toFixed(1)+" m",C);
+    }
+    if(tool==="wall"||["ap","switch","router"].includes(tool)){ctx.strokeStyle=C.accent;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(mx,my,4,0,7);ctx.stroke()}
+    if(tool==="cable"&&pending){const a=dev(pending);if(a){const [ax,ay]=w2s(a.x,a.y);ctx.setLineDash([5,4]);ctx.strokeStyle=C.accent;ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(mx,my);ctx.stroke();ctx.setLineDash([])}}
+    if(tool==="probe"){
+      const b=bestAt(mouse.x,mouse.y);
+      if(b){const [ax,ay]=w2s(b.ap.x,b.ap.y);ctx.strokeStyle=C.ink;ctx.globalAlpha=.6;ctx.setLineDash([3,3]);ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(mx,my);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+        pill(mx,my-18,Math.round(b.p)+" dBm · "+b.walls.length+" parede"+(b.walls.length===1?"":"s"),C)}
+    }
+  }
+  if(calib){
+    const pts=[calib.a];if(calib.b)pts.push(calib.b);
+    const endp=calib.b||(mouse?[mouse.x,mouse.y]:null),[ax,ay]=w2s(calib.a[0],calib.a[1]);
+    if(endp){const [bx,by]=w2s(endp[0],endp[1]);ctx.strokeStyle=C.accent;ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();ctx.setLineDash([]);pill((ax+bx)/2,(ay+by)/2-14,Math.hypot(endp[0]-calib.a[0],endp[1]-calib.a[1]).toFixed(2)+" m",C,C.accent)}
+    for(const p of pts){const [x,y]=w2s(p[0],p[1]);ctx.fillStyle=C.panel;ctx.strokeStyle=C.accent;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,5,0,7);ctx.fill();ctx.stroke()}
+  }
+  // régua
+  const target=[1,2,5,10,20,50].find(m=>m*view.s>=70)||50,len=target*view.s,bx=w-len-56,by=h-18;
+  ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(bx,by-4);ctx.lineTo(bx,by);ctx.lineTo(bx+len,by);ctx.lineTo(bx+len,by-4);ctx.stroke();
+  ctx.fillStyle=C.ink;ctx.font='11px "IBM Plex Mono",monospace';ctx.textAlign="right";ctx.textBaseline="bottom";ctx.fillText(target+" m",bx+len,by-6);
+}
+function drawDev(d,C){
+  const [x,y]=w2s(d.x,d.y),isSel=sel&&sel.kind==="dev"&&sel.id===d.id;
+  if(isSel){ctx.strokeStyle=C.accent;ctx.globalAlpha=.35;ctx.lineWidth=7;ctx.beginPath();ctx.arc(x,y,17,0,7);ctx.stroke();ctx.globalAlpha=1}
+  ctx.fillStyle=C.panel;ctx.strokeStyle=C.ink;ctx.lineWidth=1.6;
+  ctx.beginPath();
+  if(d.type==="ap")ctx.arc(x,y,12,0,7);
+  else if(d.type==="switch")ctx.roundRect(x-15,y-9,30,18,3);
+  else{ctx.moveTo(x,y-13);ctx.lineTo(x+15,y);ctx.lineTo(x,y+13);ctx.lineTo(x-15,y);ctx.closePath()}
+  ctx.fill();ctx.stroke();
+  ctx.strokeStyle=d.type==="ap"?C.accent:C.ink;ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=1.6;
+  if(d.type==="ap"){
+    ctx.beginPath();ctx.arc(x,y+4,6.5,-2.4,-.74);ctx.stroke();
+    ctx.beginPath();ctx.arc(x,y+4,3.5,-2.4,-.74);ctx.stroke();
+    ctx.beginPath();ctx.arc(x,y+4,1.2,0,7);ctx.fill();
+  }else if(d.type==="switch"){
+    for(let i=0;i<4;i++){ctx.fillRect(x-10+i*6,y-2.5,3.5,5)}
+  }else{
+    ctx.font='600 9px "IBM Plex Mono",monospace';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("FW",x,y+.5);
+  }
+  ctx.textAlign="center";ctx.textBaseline="top";ctx.fillStyle=C.ink;ctx.font='500 11px "IBM Plex Sans",sans-serif';
+  const label=d.name;
+  ctx.lineWidth=3;ctx.strokeStyle=C.paper;ctx.strokeText(label,x,y+17);ctx.fillText(label,x,y+17);
+  if(d.type==="ap"){
+    ctx.font='10px "IBM Plex Mono",monospace';ctx.fillStyle=C.mute;
+    const t=`${BANDS[d.band].n.replace(",",".")} c${d.ch} · ${d.tx}dBm`;
+    ctx.strokeText(t,x,y+30);ctx.fillText(t,x,y+30);
+  }
+}
+
+/* ---------- interação ---------- */
+const TOOLS=[
+  {id:"select",k:"V",n:"Selecionar e mover",i:'<path d="M5 3l13 7-6 2-2 6z"/>',h:"Clique para selecionar, arraste para mover. Arraste o fundo para deslocar a planta."},
+  {id:"wall",k:"W",n:"Desenhar parede",i:'<path d="M3 17L21 7"/><circle cx="3" cy="17" r="1.6"/><circle cx="21" cy="7" r="1.6"/>',h:"Clique para marcar o início e cada vértice. Duplo clique ou Esc encerra. Shift trava em 15°."},
+  {id:"ap",k:"A",n:"Adicionar ponto de acesso",i:'<path d="M5 10a10 10 0 0114 0M8 13.5a6 6 0 018 0"/><circle cx="12" cy="17" r="1.6"/>',h:"Clique na planta para posicionar um AP com o rádio escolhido acima."},
+  {id:"switch",k:"S",n:"Adicionar switch",i:'<rect x="3" y="8" width="18" height="8" rx="1.5"/><path d="M7 12h.01M11 12h.01M15 12h.01M19 12h.01"/>',h:"Clique para posicionar um switch PoE."},
+  {id:"router",k:"R",n:"Adicionar roteador / firewall",i:'<rect x="3" y="12" width="18" height="6" rx="1.5"/><path d="M7 15h.01M8 6l4-2.5L16 6M9.5 9l2.5-1.5L14.5 9"/>',h:"Clique para posicionar um roteador ou firewall."},
+  {id:"cable",k:"C",n:"Lançar cabo",i:'<path d="M4 18c6 0 2-12 8-12s2 12 8 12"/>',h:"Clique em um dispositivo e depois em outro para ligar com cabo."},
+  {id:"probe",k:"P",n:"Sonda de medição",i:'<circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',h:"Passe o mouse para ler a potência teórica. Clique para fixar um ponto de medição."},
+  {id:"calib",k:"K",n:"Calibrar escala da planta",i:'<path d="M3 15l12-12 6 6-12 12z"/><path d="M7 11l2 2M10 8l2 2M13 5l2 2"/>',h:"Clique em dois pontos de distância conhecida na planta (uma porta de 0,9 m, por exemplo) e informe a medida real."},
+  {id:"bgmove",k:"B",n:"Mover imagem da planta",i:'<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>',h:"Arraste para reposicionar a imagem de fundo sem mover paredes e dispositivos."},
+  {id:"erase",k:"X",n:"Apagar",i:'<path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13"/>',h:"Clique em um item para apagá-lo."}
+];
+function buildTools(){
+  $("#tools").innerHTML='<button class="tool" data-act="upload" title="Importar planta baixa" aria-label="Importar planta baixa"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg></button><div class="gap"></div>'+TOOLS.map(t=>`<button class="tool" data-act="tool" data-v="${t.id}" title="${t.n} (${t.k})" aria-label="${t.n}" aria-pressed="false"><svg viewBox="0 0 24 24">${t.i}</svg><kbd>${t.k}</kbd></button>`).join("");
+}
+function setTool(t){
+  tool=t;chain=null;pending=null;calib=null;$("#calib").hidden=true;
+  document.querySelectorAll(".tool").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===t)));
+  $("#hint").textContent=TOOLS.find(x=>x.id===t).h;
+  cv.style.cursor=t==="select"?"default":t==="erase"?"not-allowed":"crosshair";
+  let o="";
+  if(t==="wall")o=`<label>Material <select id="oMat" data-b="tool.mat">${Object.entries(MATS).map(([k,m])=>`<option value="${k}"${k===T.mat?" selected":""}>${m.n} · ${m.db} dB</option>`).join("")}</select></label>`;
+  if(t==="ap")o=`<label>Rádio <select id="oBand" data-b="tool.band">${Object.entries(BANDS).map(([k,b])=>`<option value="${k}"${k===T.band?" selected":""}>${b.n}</option>`).join("")}</select></label>`;
+  if(t==="cable")o=`<label>Tipo <select id="oCat" data-b="tool.cat">${Object.entries(CABLES).map(([k,c])=>`<option value="${k}"${k===T.cat?" selected":""}>${c.n}</option>`).join("")}</select></label>`;
+  $("#opt").innerHTML=o;
+  redraw();
+}
+function pos(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top]}
+function hitDev(px,py){
+  for(let i=S.dev.length-1;i>=0;i--){const d=S.dev[i],[x,y]=w2s(d.x,d.y);if(Math.hypot(px-x,py-y)<=16)return d}return null;
+}
+function hitWall(px,py){
+  let best=null,bd=8;
+  for(const w of S.walls){const [ax,ay]=w2s(w.x1,w.y1),[bx,by]=w2s(w.x2,w.y2),d=dSeg(px,py,ax,ay,bx,by);if(d<bd){bd=d;best=w}}return best;
+}
+function hitCable(px,py){
+  for(const c of S.cables){
+    const pl=polyCable(c);if(!pl)continue;
+    for(let i=0;i<2;i++){const [ax,ay]=w2s(pl[i][0],pl[i][1]),[bx,by]=w2s(pl[i+1][0],pl[i+1][1]);if(dSeg(px,py,ax,ay,bx,by)<6)return c}
+  }return null;
+}
+function hitProbe(px,py){return S.probes.findIndex(p=>{const [x,y]=w2s(p.x,p.y);return Math.hypot(px-x,py-y)<10})}
+function snapWallPt(x,y,shift){
+  if(shift&&chain){
+    const dx=x-chain.x,dy=y-chain.y,r=Math.hypot(dx,dy),a=Math.round(Math.atan2(dy,dx)/(Math.PI/12))*(Math.PI/12);
+    x=chain.x+r*Math.cos(a);y=chain.y+r*Math.sin(a);
+  }
+  x=snapV(x);y=snapV(y);
+  for(const w of S.walls)for(const [ex,ey] of [[w.x1,w.y1],[w.x2,w.y2]]){if(Math.hypot((ex-x)*view.s,(ey-y)*view.s)<10){return [ex,ey]}}
+  return [x,y];
+}
+function selectItem(s){sel=s;renderPane();redraw()}
+function delSel(){
+  const o=getSel();if(!o)return;
+  if(sel.kind==="dev"){S.dev=S.dev.filter(d=>d.id!==o.id);S.cables=S.cables.filter(c=>c.a!==o.id&&c.b!==o.id)}
+  else if(sel.kind==="wall")S.walls=S.walls.filter(w=>w.id!==o.id);
+  else S.cables=S.cables.filter(c=>c.id!==o.id);
+  sel=null;commit();invalidate();renderPane();
+}
+cv.addEventListener("contextmenu",e=>e.preventDefault());
+cv.addEventListener("pointerdown",e=>{
+  cv.setPointerCapture(e.pointerId);
+  const [px,py]=pos(e),[wx,wy]=s2w(px,py);
+  if(e.button===1||e.button===2){drag={kind:"pan",px,py,ox:view.ox,oy:view.oy};if(e.button===2){chain=null;pending=null}return}
+  if(e.button!==0)return;
+  if(tool==="select"){
+    const d=hitDev(px,py);
+    if(d){sel={kind:"dev",id:d.id};drag={kind:"dev",id:d.id,dx:d.x-wx,dy:d.y-wy,moved:false};renderPane();redraw();return}
+    const sw=getSel();
+    if(sw&&sel.kind==="wall"){
+      for(const k of [1,2]){const [x,y]=w2s(sw["x"+k],sw["y"+k]);if(Math.hypot(px-x,py-y)<10){drag={kind:"wend",id:sw.id,k,moved:false};return}}
+    }
+    const w=hitWall(px,py);
+    if(w){sel={kind:"wall",id:w.id};drag={kind:"wall",id:w.id,sx:wx,sy:wy,o:[w.x1,w.y1,w.x2,w.y2],moved:false};renderPane();redraw();return}
+    const c=hitCable(px,py);
+    if(c){sel={kind:"cable",id:c.id};renderPane();redraw();return}
+    sel=null;renderPane();drag={kind:"pan",px,py,ox:view.ox,oy:view.oy};redraw();return;
+  }
+  if(tool==="wall"){
+    const [x,y]=snapWallPt(wx,wy,e.shiftKey);
+    if(chain&&Math.hypot(x-chain.x,y-chain.y)>=0.1){
+      S.walls.push({id:uid(),x1:chain.x,y1:chain.y,x2:x,y2:y,mat:T.mat});commit();invalidate();
+    }
+    chain={x,y};return;
+  }
+  if(["ap","switch","router"].includes(tool)){
+    const x=snapV(wx),y=snapV(wy);let d;
+    if(tool==="ap"){const B=BANDS[T.band].def;d={id:uid(),type:"ap",name:nextName("AP","ap"),x,y,band:T.band,tx:B.tx,gain:B.gain,ch:B.ch,draw:15}}
+    else if(tool==="switch")d={id:uid(),type:"switch",name:nextName("SW","switch"),x,y,ports:24,poe:370};
+    else d={id:uid(),type:"router",name:nextName("FW","router"),x,y};
+    S.dev.push(d);sel={kind:"dev",id:d.id};commit();invalidate();renderPane();return;
+  }
+  if(tool==="cable"){
+    const d=hitDev(px,py);if(!d)return;
+    if(!pending){pending=d.id;redraw();return}
+    if(pending!==d.id&&!S.cables.some(c=>(c.a===pending&&c.b===d.id)||(c.a===d.id&&c.b===pending))){
+      const c={id:uid(),a:pending,b:d.id,cat:T.cat};S.cables.push(c);sel={kind:"cable",id:c.id};commit();renderPane();
+    }
+    pending=null;redraw();return;
+  }
+  if(tool==="calib"){
+    if(!calib||calib.b){calib={a:[wx,wy],b:null};$("#calib").hidden=true}
+    else{
+      calib.b=[wx,wy];const L=Math.hypot(calib.b[0]-calib.a[0],calib.b[1]-calib.a[1]);
+      if(L<0.05){calib=null}else showCalib(L);
+    }
+    redraw();return;
+  }
+  if(tool==="bgmove"){if(S.bg)drag={kind:"bg",sx:wx,sy:wy,o:[S.bg.x,S.bg.y],moved:false};return}
+  if(tool==="probe"){
+    const i=hitProbe(px,py);
+    if(i>=0)S.probes.splice(i,1);else if(S.probes.length<20)S.probes.push({x:wx,y:wy});
+    commit();redraw();return;
+  }
+  if(tool==="erase"){
+    const d=hitDev(px,py),w=d?null:hitWall(px,py),c=d||w?null:hitCable(px,py),pi=d||w||c?-1:hitProbe(px,py);
+    if(d){sel={kind:"dev",id:d.id};delSel()}
+    else if(w){sel={kind:"wall",id:w.id};delSel()}
+    else if(c){sel={kind:"cable",id:c.id};delSel()}
+    else if(pi>=0){S.probes.splice(pi,1);commit();redraw()}
+  }
+});
+cv.addEventListener("pointermove",e=>{
+  const [px,py]=pos(e),[wx,wy]=s2w(px,py);
+  mouse={x:wx,y:wy};
+  if(tool==="wall"||["ap","switch","router"].includes(tool)){
+    if(tool==="wall"){const [x,y]=snapWallPt(wx,wy,e.shiftKey);mouse={x,y}}else mouse={x:snapV(wx),y:snapV(wy)};
+  }
+  if(drag){
+    if(drag.kind==="pan"){view.ox=drag.ox+(px-drag.px);view.oy=drag.oy+(py-drag.py);redraw()}
+    else if(drag.kind==="bg"&&S.bg){S.bg.x=drag.o[0]+(wx-drag.sx);S.bg.y=drag.o[1]+(wy-drag.sy);drag.moved=true;redraw()}
+    else if(drag.kind==="dev"){const d=dev(drag.id);if(d){d.x=clamp(snapV(wx+drag.dx),0,S.meta.W);d.y=clamp(snapV(wy+drag.dy),0,S.meta.H);drag.moved=true;invalidate()}}
+    else if(drag.kind==="wend"){const w=S.walls.find(o=>o.id===drag.id);if(w){w["x"+drag.k]=snapV(wx);w["y"+drag.k]=snapV(wy);drag.moved=true;invalidate()}}
+    else if(drag.kind==="wall"){const w=S.walls.find(o=>o.id===drag.id);if(w){const dx=snapV(wx-drag.sx),dy=snapV(wy-drag.sy);w.x1=drag.o[0]+dx;w.y1=drag.o[1]+dy;w.x2=drag.o[2]+dx;w.y2=drag.o[3]+dy;drag.moved=true;invalidate()}}
+  }else redraw();
+  updateStatus(wx,wy);
+});
+cv.addEventListener("pointerup",()=>{
+  if(drag&&drag.moved){commit();renderPane()}
+  drag=null;
+});
+cv.addEventListener("pointerleave",()=>{mouse=null;redraw();$("#status").innerHTML='<span>Passe o mouse sobre a planta para medir.</span>'});
+cv.addEventListener("dblclick",()=>{if(tool==="wall"){chain=null;redraw()}});
+cv.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const [px,py]=pos(e),[wx,wy]=s2w(px,py),f=Math.pow(1.0015,-e.deltaY);
+  view.s=clamp(view.s*f,3,120);view.ox=px-wx*view.s;view.oy=py-wy*view.s;redraw();
+},{passive:false});
+function zoom(f){
+  const r=cv.getBoundingClientRect(),px=r.width/2,py=r.height/2,[wx,wy]=s2w(px,py);
+  view.s=clamp(view.s*f,3,120);view.ox=px-wx*view.s;view.oy=py-wy*view.s;redraw();
+}
+function updateStatus(x,y){
+  const inside=x>=0&&y>=0&&x<=S.meta.W&&y<=S.meta.H,b=inside?bestAt(x,y):null;
+  let h=`<span>x <b>${x.toFixed(1)}</b> y <b>${y.toFixed(1)}</b> m</span>`;
+  if(b){
+    const q=quality(b.p),list=HEAT&&HEAT.list.indexOf(b.ap),cell=HEAT?Math.floor(y/HEAT.cell)*HEAT.cols+Math.floor(x/HEAT.cell):-1;
+    h+=`<span><b>${b.p.toFixed(1)} dBm</b> <span style="color:${q[1]}">${q[0]}</span></span><span>${esc(b.ap.name)} · ${b.walls.length} parede${b.walls.length===1?"":"s"}</span>`;
+    if(HEAT&&cell>=0&&cell<HEAT.N)h+=`<span>SINR <b>${HEAT.sinr[cell].toFixed(1)} dB</b></span>`;
+  }else if(inside)h+=`<span>Nenhum AP na banda selecionada.</span>`;
+  $("#status").innerHTML=h;
+}
+document.addEventListener("keydown",e=>{
+  const t=e.target.tagName;if(t==="INPUT"||t==="SELECT"||t==="TEXTAREA")return;
+  const k=e.key.toLowerCase();
+  if((e.ctrlKey||e.metaKey)&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return}
+  if((e.ctrlKey||e.metaKey)&&k==="y"){e.preventDefault();redo();return}
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const tl=TOOLS.find(x=>x.k.toLowerCase()===k);
+  if(tl){setTool(tl.id);return}
+  if(k==="escape"){chain=null;pending=null;sel=null;renderPane();redraw()}
+  if(k==="delete"||k==="backspace"){delSel()}
+});
+function undo(){if(hi>0){hi--;restore(hist[hi]);persist();invalidate();renderPane()}}
+function redo(){if(hi<hist.length-1){hi++;restore(hist[hi]);persist();invalidate();renderPane()}}
+
+/* ---------- painel ---------- */
+const pane=$("#pane");
+const chOpts=(band,cur)=>CH[band].map(c=>`<option value="${c}"${c===cur?" selected":""}>${c}</option>`).join("");
+function renderPane(){
+  document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.v===tab)));
+  pane.innerHTML=tab==="props"?propsHTML():reportHTML();
+}
+function propsHTML(){
+  const o=getSel();
+  if(o&&sel.kind==="dev"){
+    const del=`<div class="btns"><button class="btn" data-act="dup">Duplicar</button><button class="btn dng" data-act="del">Excluir</button></div>`;
+    const name=`<div class="row"><span>Nome</span><input type="text" id="pName" data-b="sel.name" value="${esc(o.name)}"></div>`;
+    if(o.type==="ap"){
+      const cs=S.cables.filter(c=>c.a===o.id||c.b===o.id);
+      return `<div class="grp"><h3>Ponto de acesso</h3>${name}
+        <div class="row"><span>Banda</span><select id="pBand" data-b="sel.band" data-r="1">${Object.entries(BANDS).map(([k,b])=>`<option value="${k}"${k===o.band?" selected":""}>${b.n}</option>`).join("")}</select></div>
+        <div class="row"><span>Canal</span><select id="pCh" data-b="sel.ch" data-t="n">${chOpts(o.band,o.ch)}</select></div>
+        <div class="row"><span>Potência Tx (dBm)</span><input type="number" id="pTx" data-b="sel.tx" data-t="n" min="0" max="30" step="1" value="${o.tx}"></div>
+        <div class="row"><span>Ganho da antena (dBi)</span><input type="number" id="pGain" data-b="sel.gain" data-t="n" min="0" max="15" step="0.5" value="${o.gain}"></div>
+        <div class="row"><span>Consumo PoE (W)</span><input type="number" id="pDraw" data-b="sel.draw" data-t="n" min="0" max="90" step="0.5" value="${o.draw}"></div>
+        <div class="kv"><span>EIRP</span><span>${o.tx+o.gain} dBm</span><span>Posição</span><span>${o.x.toFixed(1)}, ${o.y.toFixed(1)} m</span><span>Cabos ligados</span><span>${cs.length}</span></div>
+        ${del}</div>`;
+    }
+    if(o.type==="switch")return `<div class="grp"><h3>Switch</h3>${name}
+        <div class="row"><span>Portas</span><select id="pPorts" data-b="sel.ports" data-t="n">${[8,16,24,48].map(n=>`<option value="${n}"${n===o.ports?" selected":""}>${n}</option>`).join("")}</select></div>
+        <div class="row"><span>Orçamento PoE (W)</span><input type="number" id="pPoe" data-b="sel.poe" data-t="n" min="0" max="2000" step="10" value="${o.poe}"></div>
+        ${del}</div>`;
+    return `<div class="grp"><h3>Roteador / firewall</h3>${name}${del}</div>`;
+  }
+  if(o&&sel.kind==="wall"){
+    const L=Math.hypot(o.x2-o.x1,o.y2-o.y1);
+    return `<div class="grp"><h3>Parede</h3>
+      <div class="row"><span>Material</span><select id="pMat" data-b="sel.mat">${Object.entries(MATS).map(([k,m])=>`<option value="${k}"${k===o.mat?" selected":""}>${m.n} · ${m.db} dB</option>`).join("")}</select></div>
+      <div class="kv"><span>Comprimento</span><span>${L.toFixed(1)} m</span><span>Atenuação (2,4 GHz)</span><span>${MATS[o.mat].db} dB</span><span>Atenuação (5 GHz)</span><span>${(MATS[o.mat].db*BANDS["5"].k).toFixed(1)} dB</span><span>Atenuação (6 GHz)</span><span>${(MATS[o.mat].db*BANDS["6"].k).toFixed(1)} dB</span></div>
+      <div class="btns"><button class="btn dng" data-act="del">Excluir</button></div></div>`;
+  }
+  if(o&&sel.kind==="cable"){
+    const a=dev(o.a),b=dev(o.b),L=cableLen(o),st=cableState(o);
+    return `<div class="grp"><h3>Cabo</h3>
+      <div class="kv"><span>De</span><span>${esc(a.name)}</span><span>Para</span><span>${esc(b.name)}</span></div>
+      <div class="row"><span>Tipo</span><select id="pCat" data-b="sel.cat" data-r="1">${Object.entries(CABLES).map(([k,c])=>`<option value="${k}"${k===o.cat?" selected":""}>${c.n}</option>`).join("")}</select></div>
+      <div class="kv"><span>Comprimento estimado</span><span style="color:var(--${st})">${L.toFixed(1)} m</span><span>Limite do tipo</span><span>${CABLES[o.cat].lim} m</span></div>
+      <p class="small" style="margin:0">Percurso ortogonal com 15% de folga e ${S.set.drop} m de descida em cada ponta.</p>
+      <div class="btns"><button class="btn dng" data-act="del">Excluir</button></div></div>`;
+  }
+  const s=S.set;
+  return `<div class="grp"><h3>Projeto</h3>
+    <div class="row2"><label class="lbl">Largura (m)<input type="number" id="mW" data-b="meta.W" data-t="n" min="5" max="300" step="1" value="${S.meta.W}"></label>
+    <label class="lbl">Profundidade (m)<input type="number" id="mH" data-b="meta.H" data-t="n" min="5" max="300" step="1" value="${S.meta.H}"></label></div>
+    <label class="lbl" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sSnap" data-b="set.snap"${s.snap?" checked":""}> Alinhar à grade de 0,5 m</label></div>
+  <div class="grp"><h3>Modelo de propagação</h3>
+    <div class="row"><span>Expoente de perda (n)</span><input type="number" id="sN" data-b="set.n" data-t="n" min="1.6" max="5" step="0.1" value="${s.n}"></div>
+    <div class="row"><span>Piso de ruído (dBm)</span><input type="number" id="sNoise" data-b="set.noise" data-t="n" min="-110" max="-80" step="1" value="${s.noise}"></div>
+    <div class="row"><span>Descida do cabo (m)</span><input type="number" id="sDrop" data-b="set.drop" data-t="n" min="0" max="10" step="0.5" value="${s.drop}"></div>
+    <p class="small" style="margin:0">Pr = Pt + G − FSPL(1 m) − 10·n·log₁₀(d) − Σ paredes. Em espaço livre n = 2; em escritórios, 2,8 a 3,5. A atenuação das paredes cresce 35% em 5 GHz e 50% em 6 GHz.</p></div>
+  <div class="grp"><h3>Planta baixa de fundo</h3>
+    <div class="btns"><button class="btn pri" data-act="upload">${S.bg?"Substituir planta":"Importar planta"}</button>${S.bg?`<button class="btn" data-act="tool" data-v="calib">Calibrar escala</button><button class="btn" data-act="tool" data-v="bgmove">Mover</button><button class="btn dng" data-act="rmbg">Remover</button>`:""}</div>
+    ${S.bg?`<div class="row2"><label class="lbl">X (m)<input type="number" id="bgX" data-b="bg.x" data-t="n" step="0.1" value="${S.bg.x.toFixed(2)}"></label><label class="lbl">Y (m)<input type="number" id="bgY" data-b="bg.y" data-t="n" step="0.1" value="${S.bg.y.toFixed(2)}"></label></div>
+    <div class="row"><span>Largura (m)</span><input type="number" id="bgW" data-b="bg.w" data-t="n" min="1" max="500" step="0.1" value="${S.bg.w.toFixed(2)}"></div>
+    <div class="row"><span>Opacidade</span><input type="range" id="bgOp" data-b="bg.op" data-t="n" min="0.1" max="1" step="0.05" value="${S.bg.op}"></div>`:""}
+    <p class="small" style="margin:0">Aceita PNG, JPG, WebP e SVG, também por arrastar e soltar sobre a planta. Para PDF, exporte a página como imagem. Depois de importar, calibre a escala marcando dois pontos de distância conhecida.</p></div>
+  <div class="grp"><h3>Rádios</h3>
+    <button class="btn" data-act="autoch">Atribuir canais automaticamente</button>
+    <p class="small" style="margin:0">Distribui canais minimizando a interferência co-canal entre APs da mesma banda.</p></div>`;
+}
+function reportHTML(){
+  const lan=lanReport(),H=HEAT,thr=S.set.thr;
+  const cov=H?H.cov*100:0,list=H?H.list:[];
+  const bandTxt=S.set.band==="all"?"todas as bandas":BANDS[S.set.band].n;
+  let h=`<div class="grp"><h3>Cobertura</h3>
+    <div class="cov"><b>${cov.toFixed(0)}%</b><span class="small">da área com sinal ≥ ${thr} dBm (${bandTxt})</span></div>
+    <div class="bar-cov"><i style="width:${cov}%"></i></div>
+    <div class="kv"><span>Área do projeto</span><span>${(S.meta.W*S.meta.H).toFixed(0)} m²</span><span>Sinal médio</span><span>${H&&H.avg!=null?H.avg.toFixed(1)+" dBm":"—"}</span><span>APs considerados</span><span>${list.length}</span><span>Paredes</span><span>${S.walls.length}</span></div></div>`;
+  const ws=[];
+  if(!list.length)ws.push(["warn","Não há APs na banda selecionada."]);
+  else if(cov<90)ws.push(["warn",`Cobertura de ${cov.toFixed(0)}% está abaixo de 90%. Reposicione ou adicione APs nas áreas em vermelho.`]);
+  const cc=[];
+  for(let i=0;i<S.dev.length;i++)for(let j=i+1;j<S.dev.length;j++){
+    const a=S.dev[i],b=S.dev[j];
+    if(a.type==="ap"&&b.type==="ap"&&a.band===b.band&&overlap(a.band,a.ch,b.ch)){
+      const p=Math.max(rx(a,b.x,b.y),rx(b,a.x,a.y));if(p>=-82)cc.push(`${a.name} e ${b.name} usam o canal ${a.ch} e se ouvem a ${Math.round(p)} dBm.`);
+    }
+  }
+  cc.forEach(t=>ws.push(["warn","Interferência co-canal: "+t]));
+  lan.warns.forEach(w=>ws.push(w));
+  if(!ws.length)ws.push(["ok","Nenhum alerta. Cobertura, canais e cabeamento estão dentro dos limites."]);
+  h+=`<div class="grp"><h3>Alertas</h3>${ws.map(w=>`<div class="warn ${w[0]}">${esc(w[1])}</div>`).join("")}</div>`;
+  h+=`<div class="grp"><h3>Pontos de acesso</h3>`;
+  if(lan.apsAll.length){
+    h+=`<div class="tw"><table><tr><th>AP</th><th>Rádio</th><th>Canal</th><th>Tx</th><th>Uplink</th></tr>${lan.apsAll.map(a=>{
+      const u=lan.upl[a.id];
+      return `<tr><td><button class="link" data-act="pick" data-id="${a.id}">${esc(a.name)}</button></td><td class="m">${BANDS[a.band].n}</td><td class="m">${a.ch}</td><td class="m">${a.tx} dBm</td><td class="m">${u?esc(u.to.name)+" · "+cableLen(u.c).toFixed(0)+" m":"—"}</td></tr>`}).join("")}</table></div>`;
+  }else h+=`<p class="small" style="margin:0">Nenhum AP no projeto.</p>`;
+  h+=`</div><div class="grp"><h3>Cabeamento e switches</h3>`;
+  if(lan.swRows.length){
+    h+=`<div class="tw"><table><tr><th>Switch</th><th>Portas</th><th>PoE</th></tr>${lan.swRows.map(r=>`<tr><td><button class="link" data-act="pick" data-id="${r.s.id}">${esc(r.s.name)}</button></td><td class="m" style="color:${r.used>r.s.ports?"var(--bad)":"inherit"}">${r.used}/${r.s.ports}</td><td class="m" style="color:${r.poeUsed>r.s.poe?"var(--bad)":"inherit"}">${r.poeUsed}/${r.s.poe} W</td></tr>`).join("")}</table></div>`;
+  }
+  const byCat={};S.cables.forEach(c=>byCat[c.cat]=(byCat[c.cat]||0)+cableLen(c));
+  h+=`<div class="kv"><span>Cabos lançados</span><span>${S.cables.length}</span><span>Metragem total</span><span>${lan.total.toFixed(0)} m</span>${Object.entries(byCat).map(([k,v])=>`<span>${CABLES[k].n}</span><span>${v.toFixed(0)} m</span>`).join("")}</div></div>`;
+  h+=`<div class="grp"><h3>Pontos de medição</h3>`;
+  if(S.probes.length){
+    h+=`<div class="tw"><table><tr><th>#</th><th>Local (m)</th><th>dBm</th><th>AP</th><th></th></tr>${S.probes.map((p,i)=>{
+      const b=bestAt(p.x,p.y);return `<tr><td class="m">${i+1}</td><td class="m">${p.x.toFixed(1)}, ${p.y.toFixed(1)}</td><td class="m">${b?b.p.toFixed(1):"—"}</td><td>${b?esc(b.ap.name):"—"}</td><td><button class="link" data-act="rmprobe" data-i="${i}">remover</button></td></tr>`}).join("")}</table></div>`;
+  }else h+=`<p class="small" style="margin:0">Use a ferramenta Sonda e clique na planta para fixar pontos de medição.</p>`;
+  h+=`</div><div class="grp"><h3>Dados do projeto</h3>
+    <div class="btns"><button class="btn" data-act="copyjson">Copiar JSON</button><button class="btn" data-act="sample">Carregar exemplo</button><button class="btn dng" data-act="newproj">Novo projeto</button></div>
+    <details><summary>Importar JSON</summary><div class="grp" style="margin-top:8px"><textarea id="impTxt" placeholder="Cole aqui o JSON exportado"></textarea><input type="file" id="impFile" accept=".json,application/json" aria-label="Importar arquivo JSON"><div class="btns"><button class="btn pri" data-act="import">Importar</button></div></div></details>
+    <p class="small" id="dataMsg" style="margin:0"></p></div>`;
+  return h;
+}
+function msg(t){const m=$("#dataMsg");if(m)m.textContent=t}
+
+/* ---------- eventos do painel e da barra ---------- */
+function applyBinding(el,final){
+  const [scope,key]=el.dataset.b.split(".");
+  const obj=scope==="sel"?getSel():scope==="meta"?S.meta:scope==="set"?S.set:scope==="bg"?S.bg:T;
+  if(!obj)return;
+  let v;
+  if(el.type==="checkbox")v=el.checked;
+  else if(el.dataset.t==="n"){
+    v=parseFloat(el.value);if(!isFinite(v))return;
+    if(el.min!==""&&el.max!=="")v=clamp(v,+el.min,+el.max);
+  }else v=el.value;
+  obj[key]=v;
+  if(scope==="sel"&&key==="band"){const B=BANDS[v];obj.tx=B.def.tx;obj.gain=B.def.gain;obj.ch=B.def.ch}
+  if(scope==="meta"&&(key==="W"||key==="H")&&final)fit();
+  if(scope==="tool"){return}
+  if(scope==="set"&&key==="mode")paintHeat(),redraw();
+  if((scope==="set"&&(key==="op"||key==="heat"))||scope==="bg")redraw();
+  else invalidate();
+  if(final){commit();if(el.dataset.r||scope==="meta"||(scope==="set"&&key!=="op"))renderPane()}
+}
+document.addEventListener("input",e=>{const el=e.target.closest("[data-b]");if(el&&el.type!=="checkbox"&&el.tagName!=="SELECT")applyBinding(el,false)});
+document.addEventListener("change",e=>{
+  const el=e.target.closest("[data-b]");
+  if(el)applyBinding(el,true);
+  if(e.target.id==="planIn"&&e.target.files[0]){loadPlanFile(e.target.files[0]);e.target.value=""}
+  if(e.target.id==="impFile"&&e.target.files[0]){
+    const r=new FileReader();r.onload=()=>{$("#impTxt").value=r.result};r.readAsText(e.target.files[0]);
+  }
+});
+function copyText(t,ok){
+  const fb=()=>{const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");msg(ok)}catch(e){msg("Não foi possível copiar. Use o texto abaixo.")}ta.remove()};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>msg(ok),fb);else fb();
+}
+function autoChannels(){
+  for(const band of Object.keys(BANDS)){
+    const list=S.dev.filter(d=>d.type==="ap"&&d.band===band).sort((a,b)=>a.x-b.x||a.y-b.y);
+    const pool=band==="2.4"?[1,6,11]:band==="5"?[36,40,44,48,149,153,157,161]:[1,5,9,13,17,21,25,29];
+    const done=[];
+    for(const a of list){
+      let best=pool[0],bc=Infinity;
+      for(const ch of pool){
+        let cost=0;for(const b of done)if(overlap(band,ch,b.ch))cost+=mw(Math.max(rx(b,a.x,a.y),rx(a,b.x,b.y)));
+        if(cost<bc-1e-15){bc=cost;best=ch}
+      }
+      a.ch=best;done.push(a);
+    }
+  }
+  commit();invalidate();renderPane();
+}
+function importJSON(txt){
+  try{
+    const o=JSON.parse(txt);
+    if(!o||!Array.isArray(o.walls)||!Array.isArray(o.dev)||!o.meta||!o.set)throw new Error("formato");
+    o.cables=o.cables||[];o.probes=o.probes||[];
+    S=o;setBg(S.bg);sel=null;hist=[];hi=-1;commit();fit();invalidate();renderPane();msg("Projeto importado.");
+  }catch(e){msg("JSON inválido. Cole o conteúdo exportado por esta ferramenta.")}
+}
+let armNew=false;
+document.addEventListener("click",e=>{
+  const el=e.target.closest("[data-act]");if(!el)return;
+  const a=el.dataset.act;
+  if(a==="tool")setTool(el.dataset.v);
+  else if(a==="tab"){tab=el.dataset.v;renderPane()}
+  else if(a==="undo")undo();
+  else if(a==="redo")redo();
+  else if(a==="zin")zoom(1.25);
+  else if(a==="zout")zoom(0.8);
+  else if(a==="fit")fit();
+  else if(a==="del")delSel();
+  else if(a==="dup"){const o=getSel();if(o){const c=JSON.parse(JSON.stringify(o));c.id=uid();c.x+=2;c.y+=2;c.name=nextName(o.type==="ap"?"AP":o.type==="switch"?"SW":"FW",o.type);S.dev.push(c);sel={kind:"dev",id:c.id};commit();invalidate();renderPane()}}
+  else if(a==="rmbg"){setBg(null);commit();renderPane();redraw()}
+  else if(a==="upload")$("#planIn").click();
+  else if(a==="calibok")applyCalib();
+  else if(a==="calibcancel"){calib=null;$("#calib").hidden=true;redraw()}
+  else if(a==="autoch")autoChannels();
+  else if(a==="pick"){tab="props";selectItem({kind:"dev",id:el.dataset.id})}
+  else if(a==="rmprobe"){S.probes.splice(+el.dataset.i,1);commit();renderPane();redraw()}
+  else if(a==="copyjson")copyText(JSON.stringify(S),"JSON copiado para a área de transferência.");
+  else if(a==="import")importJSON($("#impTxt").value);
+  else if(a==="sample"){S=sample();setBg(null);sel=null;hist=[];hi=-1;commit();fit();invalidate();renderPane()}
+  else if(a==="newproj"){
+    if(!armNew){armNew=true;el.textContent="Clique de novo para confirmar";setTimeout(()=>{armNew=false;if(el.isConnected)el.textContent="Novo projeto"},3500);return}
+    armNew=false;
+    S={v:1,meta:{name:"Novo projeto",W:30,H:20},set:Object.assign(sample().set),walls:[],dev:[],cables:[],probes:[],bg:null};
+    setBg(null);sel=null;hist=[];hi=-1;commit();fit();invalidate();renderPane();
+  }
+});
+
+/* ---------- planta baixa: importar e calibrar ---------- */
+function toast(t){$("#hint").textContent=t}
+function loadPlanFile(f){
+  if(!f)return;
+  if(!/^image\//.test(f.type)){toast("Formato não aceito. Use PNG, JPG, WebP ou SVG. Para PDF, exporte a página como imagem.");return}
+  const url=URL.createObjectURL(f),im=new Image();
+  im.onerror=()=>{URL.revokeObjectURL(url);toast("Não foi possível ler essa imagem.")};
+  im.onload=()=>{
+    const iw=im.naturalWidth||1200,ih=im.naturalHeight||800,k=Math.min(1,2400/Math.max(iw,ih));
+    const c=document.createElement("canvas");c.width=Math.round(iw*k);c.height=Math.round(ih*k);
+    const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
+    URL.revokeObjectURL(url);
+    setBg({data:c.toDataURL("image/jpeg",.86),x:0,y:0,w:S.meta.W,op:.6});
+    S.meta.H=Math.max(5,Math.min(300,Math.round(S.meta.W*c.height/c.width*10)/10));
+    sel=null;commit();fit();invalidate();setTool("calib");renderPane();
+    toast("Planta importada. Marque dois pontos de distância conhecida (uma porta de 0,9 m, por exemplo) para calibrar a escala.");
+  };
+  im.src=url;
+}
+function showCalib(L){
+  $("#cMeas").textContent=L.toFixed(2);
+  const i=$("#cDist");i.value=L.toFixed(2);$("#calib").hidden=false;i.focus();i.select();
+}
+function applyCalib(){
+  if(!calib||!calib.b)return;
+  const L=Math.hypot(calib.b[0]-calib.a[0],calib.b[1]-calib.a[1]),D=parseFloat($("#cDist").value);
+  if(!(D>0)){toast("Informe a distância real em metros.");return}
+  const f=D/L;
+  if(S.meta.W*f>500||S.meta.H*f>500||S.meta.W*f<2||S.meta.H*f<2){toast("Esse fator deixaria o projeto fora de 2 a 500 m. Confira os dois pontos e a distância informada.");return}
+  S.walls.forEach(w=>{w.x1*=f;w.y1*=f;w.x2*=f;w.y2*=f});
+  S.dev.forEach(d=>{d.x*=f;d.y*=f});S.probes.forEach(p=>{p.x*=f;p.y*=f});
+  S.meta.W=Math.round(S.meta.W*f*10)/10;S.meta.H=Math.round(S.meta.H*f*10)/10;
+  if(S.bg){S.bg.x*=f;S.bg.y*=f;S.bg.w*=f}
+  commit();fit();invalidate();setTool("select");renderPane();
+  toast("Escala aplicada (×"+f.toFixed(3)+"). A planta agora tem "+S.meta.W+" × "+S.meta.H+" m.");
+}
+(function(){
+  const cw=$("#cwrap");
+  ["dragenter","dragover"].forEach(ev=>cw.addEventListener(ev,e=>{e.preventDefault();cw.classList.add("drop")}));
+  ["dragleave","drop"].forEach(ev=>cw.addEventListener(ev,e=>{e.preventDefault();cw.classList.remove("drop")}));
+  cw.addEventListener("drop",e=>{if(e.dataTransfer&&e.dataTransfer.files[0])loadPlanFile(e.dataTransfer.files[0])});
+  $("#cDist").addEventListener("keydown",e=>{if(e.key==="Enter")applyCalib();if(e.key==="Escape"){calib=null;$("#calib").hidden=true;redraw()}});
+})();
+
+/* ---------- inicialização ---------- */
+function syncBar(){
+  $("#bBand").value=S.set.band;$("#bMode").value=S.set.mode;$("#bThr").value=S.set.thr;$("#bOp").value=S.set.op;$("#bHeat").checked=S.set.heat;
+  $("#projName").value=S.meta.name;
+}
+S=load()||sample();
+if(S.bg)setBg(S.bg);
+buildTools();syncBar();
+commit();
+new ResizeObserver(()=>{resize();if(!resize.done){resize.done=1;fit()}}).observe(cv.parentElement);
+setTool("select");renderPane();renderLegend();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>redraw());
+new MutationObserver(()=>redraw()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+</script>
+
+</body></html>
